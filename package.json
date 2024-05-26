@@ -1,0 +1,24 @@
+{
+  "name": "1v1",
+  "version": "1.0.0",
+  "description": "2 cercles",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oDYRASH/jeu.git"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/oDYRASH/jeu/issues"
+  },
+  "homepage": "https://github.com/oDYRASH/jeu#readme"
+}
