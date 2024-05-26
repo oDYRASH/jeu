@@ -16,13 +16,10 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${wsProtocol}//${window.location.host}`);
+    const ws = new WebSocket(`${wsProtocol}//${window.location.hostname}:${window.location.port}`);
 
     let players = {};
     let playerId = null;
-    let targetX = null;
-    let targetY = null;
-    const speed = 5;
 
     function drawCircle(circle) {
       ctx.beginPath();
@@ -39,34 +36,12 @@
       }
     }
 
-    function moveCircle() {
-      if (targetX !== null && targetY !== null) {
-        const player = players[playerId];
-        const dx = targetX - player.x;
-        const dy = targetY - player.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance < speed) {
-          player.x = targetX;
-          player.y = targetY;
-          targetX = null;
-          targetY = null;
-        } else {
-          player.x += dx / distance * speed;
-          player.y += dy / distance * speed;
-        }
-
-        ws.send(JSON.stringify({ type: 'move', id: playerId, x: player.x, y: player.y }));
-        requestAnimationFrame(moveCircle);
-      }
-    }
-
     canvas.addEventListener('mousedown', (event) => {
       if (event.button === 2) { // Right mouse button
         event.preventDefault();
-        targetX = event.offsetX;
-        targetY = event.offsetY;
-        requestAnimationFrame(moveCircle);
+        const x = event.offsetX;
+        const y = event.offsetY;
+        ws.send(JSON.stringify({ type: 'move', id: playerId, x, y }));
       }
     });
 
@@ -77,15 +52,12 @@
         players = data.players;
       } else if (data.type === 'update') {
         players = data.players;
+        drawPlayers();
       }
-      drawPlayers();
     };
 
     // Prevent context menu on right click
     canvas.addEventListener('contextmenu', event => event.preventDefault());
-
-    // Initialize with an empty canvas
-    drawPlayers();
   </script>
 </body>
 </html>

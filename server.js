@@ -9,6 +9,8 @@ const wss = new WebSocket.Server({ server });
 
 let players = {};
 let nextPlayerId = 1;
+const speed = 5;
+const updateInterval = 1000 / 64; // 64 times per second
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -18,7 +20,7 @@ app.get('/', (req, res) => {
 
 wss.on('connection', (ws) => {
   const playerId = nextPlayerId++;
-  players[playerId] = { id: playerId, x: 0, y: 0, color: getRandomColor(), radius: 20 };
+  players[playerId] = { id: playerId, x: 0, y: 0, color: getRandomColor(), radius: 20, targetX: null, targetY: null };
 
   ws.send(JSON.stringify({ type: 'init', playerId, players }));
 
@@ -26,25 +28,14 @@ wss.on('connection', (ws) => {
     const data = JSON.parse(message);
 
     if (data.type === 'move') {
-      players[data.id].x = data.x;
-      players[data.id].y = data.y;
-
-      wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify({ type: 'update', players }));
-        }
-      });
+      const player = players[data.id];
+      player.targetX = data.x;
+      player.targetY = data.y;
     }
   });
 
   ws.on('close', () => {
     delete players[playerId];
-
-    wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({ type: 'update', players }));
-      }
-    });
   });
 });
 
@@ -57,7 +48,39 @@ function getRandomColor() {
   return color;
 }
 
-const PORT = process.env.PORT || 3000;
+// Function to update player positions
+function updatePositions() {
+  for (const id in players) {
+    const player = players[id];
+    if (player.targetX !== null && player.targetY !== null) {
+      const dx = player.targetX - player.x;
+      const dy = player.targetY - player.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance < speed) {
+        player.x = player.targetX;
+        player.y = player.targetY;
+        player.targetX = null;
+        player.targetY = null;
+      } else {
+        player.x += dx / distance * speed;
+        player.y += dy / distance * speed;
+      }
+    }
+  }
+
+  // Broadcast updated positions to all clients
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ type: 'update', players }));
+    }
+  });
+}
+
+// Update positions at a regular interval (64 times per second)
+setInterval(updatePositions, updateInterval);
+
+const PORT = 10000;
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
