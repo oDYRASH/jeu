@@ -156,7 +156,7 @@
           const y = event.offsetY;
           const player = players[playerId];
           ws.send(JSON.stringify({ type: 'shoot', id: playerId, targetX: x, targetY: y }));
-          shootBullet(player.x, player.y, x, y, player.color); // Add bullet locally
+          // shootBullet(player.x, player.y, x, y, player.color); // Add bullet locally utile pour verifier la latence car = 0 en Localhost
         }
       }
     });
