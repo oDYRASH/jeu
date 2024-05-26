@@ -20,6 +20,10 @@
 
     let players = {};
     let playerId = null;
+    let clickPosition = null;
+    let clickAlpha = 0;
+    const fadeSpeed = 0.05; // Adjust the speed of fading
+    let speed = 5;
 
     function drawCircle(circle) {
       ctx.beginPath();
@@ -34,6 +38,42 @@
       for (const id in players) {
         drawCircle(players[id]);
       }
+
+      if (clickPosition && clickAlpha > 0) {
+        ctx.fillStyle = `rgba(0, 255, 0, ${clickAlpha})`;
+        ctx.font = '20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('X', clickPosition.x, clickPosition.y);
+        clickAlpha -= fadeSpeed; // Decrease the alpha value to create the fading effect
+      }
+    }
+
+    function updatePlayerPositions() {
+      for (const id in players) {
+        const player = players[id];
+        if (player.targetX !== null && player.targetY !== null) {
+          const dx = player.targetX - player.x;
+          const dy = player.targetY - player.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance < speed) {
+            player.x = player.targetX;
+            player.y = player.targetY;
+            player.targetX = null;
+            player.targetY = null;
+          } else {
+            player.x += dx / distance * speed;
+            player.y += dy / distance * speed;
+          }
+        }
+      }
+    }
+
+    function animate() {
+      updatePlayerPositions();
+      drawPlayers();
+      requestAnimationFrame(animate);
     }
 
     canvas.addEventListener('mousedown', (event) => {
@@ -42,6 +82,13 @@
         const x = event.offsetX;
         const y = event.offsetY;
         ws.send(JSON.stringify({ type: 'move', id: playerId, x, y }));
+        clickPosition = { x, y };
+        clickAlpha = 1; // Reset the alpha value to 1 when a new click occurs
+        // Update the local player's target position immediately for client-side prediction
+        if (players[playerId]) {
+          players[playerId].targetX = x;
+          players[playerId].targetY = y;
+        }
       }
     });
 
@@ -50,14 +97,20 @@
       if (data.type === 'init') {
         playerId = data.playerId;
         players = data.players;
+        speed = data.speed;
       } else if (data.type === 'update') {
-        players = data.players;
-        drawPlayers();
+        if (players[data.id]) {
+          players[data.id].targetX = data.targetX;
+          players[data.id].targetY = data.targetY;
+        }
       }
     };
 
     // Prevent context menu on right click
     canvas.addEventListener('contextmenu', event => event.preventDefault());
+
+    // Start the animation loop
+    requestAnimationFrame(animate);
   </script>
 </body>
 </html>

@@ -22,7 +22,7 @@ wss.on('connection', (ws) => {
   const playerId = nextPlayerId++;
   players[playerId] = { id: playerId, x: 0, y: 0, color: getRandomColor(), radius: 20, targetX: null, targetY: null };
 
-  ws.send(JSON.stringify({ type: 'init', playerId, players }));
+  ws.send(JSON.stringify({ type: 'init', playerId, players, speed }));
 
   ws.on('message', (message) => {
     const data = JSON.parse(message);
@@ -31,6 +31,13 @@ wss.on('connection', (ws) => {
       const player = players[data.id];
       player.targetX = data.x;
       player.targetY = data.y;
+
+      // Broadcast updated target positions to all clients
+      wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ type: 'update', id: player.id, targetX: player.targetX, targetY: player.targetY }));
+        }
+      });
     }
   });
 
@@ -48,8 +55,8 @@ function getRandomColor() {
   return color;
 }
 
-// Function to update player positions
-function updatePositions() {
+// Update positions at a regular interval (64 times per second)
+setInterval(() => {
   for (const id in players) {
     const player = players[id];
     if (player.targetX !== null && player.targetY !== null) {
@@ -68,17 +75,7 @@ function updatePositions() {
       }
     }
   }
-
-  // Broadcast updated positions to all clients
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify({ type: 'update', players }));
-    }
-  });
-}
-
-// Update positions at a regular interval (64 times per second)
-setInterval(updatePositions, updateInterval);
+}, updateInterval);
 
 const PORT = 10000;
 server.listen(PORT, () => {
