@@ -227,7 +227,7 @@
 
     // Prevent context menu on right click
     canvas.addEventListener('contextmenu', event => event.preventDefault());
-
+    document.body.addEventListener('contextmenu', event => event.preventDefault());
     // Start the animation loop
     requestAnimationFrame(animate);
     
