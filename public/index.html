@@ -3,72 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="./styles.css">
   <title>Canvas Game</title>
-  <style>
-    body{
-      background: black;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-    }
-
-    .particles-js-canvas-el{
-      position: absolute;
-      margin: 0;
-      padding: 0;
-      z-index: -4;
-    }
-
-    #gameCanvas {
-      background: rgba( 255, 255, 255, 0.4 );
-      box-shadow: 0 8px 32px 0 rgba( 31, 38, 135, 0.37 );
-      backdrop-filter: blur( 6px );
-      -webkit-backdrop-filter: blur( 6px );
-      border-radius: 10px;
-      border: 1px solid rgba( 255, 255, 255, 0.18 );
-      /* From https://css.glass */
-      background: rgba(255, 255, 255, 0.47);
-      border-radius: 16px;
-      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-      backdrop-filter: blur(8.1px);
-      -webkit-backdrop-filter: blur(8.1px);
-      border: 1px solid rgba(255, 255, 255, 1);
-    }
-
-    #defeatOverlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    color: red;
-    font-size: 5em;
-    text-align: center;
-    z-index: 9999;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-  }
-
-  #playAgainButton {
-    margin-top: 20px;
-    padding: 10px 20px;
-    font-size: 1em;
-    cursor: pointer;
-  }
-
-
-  </style>
 </head>
-<body id="particles-js"> 
+<body>
+  <div class="custom-cursor" id="customCursor"></div>
 
-<!-- particles.js lib - https://github.com/VincentGarreau/particles.js --> <script src="http://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script> <!-- stats.js lib --> <script src="http://threejs.org/examples/js/libs/stats.min.js"></script>
+  <script>
+      const customCursor = document.getElementById('customCursor');
 
+      document.addEventListener('mousemove', (e) => {
+          customCursor.style.left = `${e.clientX}px`;
+          customCursor.style.top = `${e.clientY}px`;
+      });
+  </script>
   <canvas id="gameCanvas" width="1600" height="800"></canvas>
   <div id="defeatOverlay" style="display: none;">
     DEFEAT
@@ -80,7 +28,6 @@
       location.reload();
     });
 
-
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -88,61 +35,60 @@
 
     let players = {};
     let playerId = null;
-    let speed = 5;
+    let playerSpeed = 3;
+    let bulletSpeed = 3*4.26;
+    let bullets = [];
 
-    function drawCircle(circle) {
+    const drawCircle = (circle) => {
+
       ctx.beginPath();
       ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
       ctx.fillStyle = circle.color;
       ctx.fill();
       ctx.closePath();
-    }
 
-    let bullets = [];
+    };
 
-    function drawBullet(bullet) {
+    const drawBullet = (bullet) => {
       ctx.beginPath();
       ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
       ctx.fillStyle = bullet.color;
       ctx.fill();
       ctx.closePath();
-    }
+    };
 
-    function drawBullets() {
-      bullets.forEach(drawBullet);
-    }
+    const drawBullets = () => bullets.forEach(drawBullet);
 
-    function updateBullets() {
+    const shootBullet = (x, y, targetX, targetY, color) => {
+      bullets.push({ x, y, targetX, targetY, radius: 5, color, speed: bulletSpeed });
+    };
+
+    const updateBullets = () => {
       bullets = bullets.filter(bullet => {
         const dx = bullet.targetX - bullet.x;
         const dy = bullet.targetY - bullet.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance < bullet.speed) {
-          return false; // Remove bullet when it reaches the target
+          return false;
         } else {
-          bullet.x += dx / distance * bullet.speed;
-          bullet.y += dy / distance * bullet.speed;
+          bullet.x += (dx / distance) * bullet.speed;
+          bullet.y += (dy / distance) * bullet.speed;
           return true;
         }
       });
-    }
+    };
 
-    function shootBullet(x, y, targetX, targetY, color) {
-      bullets.push({ x, y, targetX, targetY, radius: 5, color, speed: 10 });
-    }
-
-    function drawPlayers() {
+    const drawPlayers = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       for (const id in players) {
         if (!players[id].isDead) {
           drawCircle(players[id]);
         }
       }
-    }
+    };
 
-
-    function updatePlayerPositions() {
+    const updatePlayerPositions = () => {
       for (const id in players) {
         const player = players[id];
         if (player.targetX !== null && player.targetY !== null) {
@@ -150,92 +96,91 @@
           const dy = player.targetY - player.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
 
-          if (distance < speed) {
+          if (distance < playerSpeed) {
             player.x = player.targetX;
             player.y = player.targetY;
             player.targetX = null;
             player.targetY = null;
           } else {
-            player.x += dx / distance * speed;
-            player.y += dy / distance * speed;
+            player.x += (dx / distance) * playerSpeed;
+            player.y += (dy / distance) * playerSpeed;
           }
         }
       }
-    }
+    };
 
-    function animate() {
+    const animate = () => {
       updatePlayerPositions();
       updateBullets();
       drawPlayers();
       drawBullets();
       requestAnimationFrame(animate);
-    }
+    };
 
-    canvas.addEventListener('mousedown', (event) => {
-      if (event.button === 2) { // Right mouse button
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 's' || event.key === 'S') {
+        ws.send(JSON.stringify({ type: 'stop', id: playerId }));
+      }
+    });
+
+
+    document.body.addEventListener('mousedown', (event) => {
+      const x = event.offsetX;
+      const y = event.offsetY;
+      if (event.button === 2) {
         event.preventDefault();
-        const x = event.offsetX;
-        const y = event.offsetY;
         ws.send(JSON.stringify({ type: 'move', id: playerId, x, y }));
-        // Update the local player's target position immediately for client-side prediction
         if (players[playerId]) {
           players[playerId].targetX = x;
           players[playerId].targetY = y;
         }
-      } else if (event.button === 0) { // Left mouse button for shooting
+      } else if (event.button === 0) {
         if (players[playerId]) {
-          const x = event.offsetX;
-          const y = event.offsetY;
           const player = players[playerId];
           ws.send(JSON.stringify({ type: 'shoot', id: playerId, targetX: x, targetY: y }));
-          // shootBullet(player.x, player.y, x, y, player.color); // Add bullet locally utile pour verifier la latence car = 0 en Localhost
         }
       }
     });
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
+
       if (data.type === 'init') {
         playerId = data.playerId;
         players = data.players;
-        speed = data.speed;
+        playerSpeed = data.playerSpeed;
+        bulletSpeed = data.bulletSpeed;
       } else if (data.type === 'update') {
         if (players[data.id]) {
           players[data.id].targetX = data.targetX;
           players[data.id].targetY = data.targetY;
         }
+        playerSpeed = data.playerSpeed;
       } else if (data.type === 'newPlayer') {
         players[data.player.id] = data.player;
       } else if (data.type === 'removePlayer') {
         delete players[data.id];
-      }else if (data.type === 'shoot') {
-        if (players[data.id]) {
-          const player = players[data.id];
+      } else if (data.type === 'shoot') {
+        const player = players[data.id];
+        if (player) {
           shootBullet(player.x, player.y, data.targetX, data.targetY, player.color);
         }
+        bulletSpeed = data.bulletSpeed;
       } else if (data.type === 'playerDead') {
-        if (players[data.id]) {
-          players[data.id].isDead = true;
+        const player = players[data.id];
+        if (player) {
+          player.isDead = true;
           if (data.id === playerId) {
             document.getElementById('defeatOverlay').style.display = 'flex';
           }
         }
       }
-
-
     };
 
-    // Prevent context menu on right click
-    canvas.addEventListener('contextmenu', event => event.preventDefault());
     document.body.addEventListener('contextmenu', event => event.preventDefault());
-    // Start the animation loop
+    document.body.addEventListener('contextmenu', event => event.preventDefault());
     requestAnimationFrame(animate);
-    
-    
-  // particules js
-  particlesJS("particles-js", {"particles":{"number":{"value":6,"density":{"enable":true,"value_area":800}},"color":{"value":"#1b1e34"},"shape":{"type":"polygon","stroke":{"width":0,"color":"#000"},"polygon":{"nb_sides":6},"image":{"src":"img/github.svg","width":100,"height":100}},"opacity":{"value":0.3,"random":true,"anim":{"enable":false,"speed":1,"opacity_min":0.1,"sync":false}},"size":{"value":160,"random":false,"anim":{"enable":true,"speed":10,"size_min":40,"sync":false}},"line_linked":{"enable":false,"distance":200,"color":"#ffffff","opacity":1,"width":2},"move":{"enable":true,"speed":8,"direction":"none","random":false,"straight":false,"out_mode":"out","bounce":false,"attract":{"enable":false,"rotateX":600,"rotateY":1200}}},"interactivity":{"detect_on":"canvas","events":{"onhover":{"enable":false,"mode":"grab"},"onclick":{"enable":false,"mode":"push"},"resize":true},"modes":{"grab":{"distance":400,"line_linked":{"opacity":1}},"bubble":{"distance":400,"size":40,"duration":2,"opacity":8,"speed":3},"repulse":{"distance":200,"duration":0.4},"push":{"particles_nb":4},"remove":{"particles_nb":2}}},"retina_detect":true});var count_particles, stats, update; stats = new Stats; stats.setMode(0); stats.domElement.style.position = 'absolute'; stats.domElement.style.left = '0px'; stats.domElement.style.top = '0px'; document.body.appendChild(stats.domElement); count_particles = document.querySelector('.js-count-particles'); update = function() { stats.begin(); stats.end(); if (window.pJSDom[0].pJS.particles && window.pJSDom[0].pJS.particles.array) { count_particles.innerText = window.pJSDom[0].pJS.particles.array.length; } requestAnimationFrame(update); }; requestAnimationFrame(update);;
-    
-    
+
   </script>
 </body>
 </html>
