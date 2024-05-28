@@ -1,58 +1,7 @@
-.custom-cursor {
-  width: 7px;
-  height: 7px;
-  background-color: #2a2a38;
-  position: absolute;
-  pointer-events: none;
-  z-index: 1000;
-}
-
-body {
-  user-select: none !important;
-  cursor: none;
-  background: #D1D8EC;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
+* {
   margin: 0;
 }
 
-.particles-js-canvas-el {
-  position: absolute;
-  margin: 0;
-  padding: 0;
-  z-index: -4;
-}
-
-#gameCanvas {
-  border: solid #374a6a 1.5px;
+body{
   background: #D1D8EC;
-  -webkit-box-shadow: 12px 12px 24px #b2b8c9, -12px -12px 24px #f0f8ff;
-  box-shadow: 8px 7px 24px #b2b8c9, -7px -9px 24px #f0f8ff;
-}
-
-#defeatOverlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.7);
-  color: rgb(255, 100, 100);
-  font-size: 5em;
-  text-align: center;
-  z-index: 9999;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-}
-
-#playAgainButton {
-  margin-top: 20px;
-  padding: 10px 20px;
-  font-size: 1em;
-  cursor: pointer;
 }

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaderboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="leaderboard">
+        <h1>Leaderboard</h1>
+        <div class="entry">
+            <div class="rank">1.</div>
+            <div class="circle red"></div>
+            <div class="player">Player1</div>
+            <div class="score">5000</div>
+        </div>
+        <div class="entry">
+            <div class="rank">2.</div>
+            <div class="circle blue"></div>
+            <div class="player">Player2</div>
+            <div class="score">4500</div>
+        </div>
+        <div class="entry">
+            <div class="rank">3.</div>
+            <div class="circle green"></div>
+            <div class="player">Player3</div>
+            <div class="score">4000</div>
+        </div>
+    </div>
+</body>
+</html>
+<style>
+    body {
+    background-color: #add8e6; /* Light blue background */
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+.leaderboard {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    width: 300px;
+    text-align: center;
+}
+
+.leaderboard h1 {
+    margin: 0 0 20px;
+    font-size: 24px;
+    color: #000;
+}
+
+.entry {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 10px 0;
+}
+
+.rank, .player, .score {
+    font-size: 18px;
+    color: #000;
+}
+
+.circle {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+}
+
+.red {
+    background-color: red;
+}
+
+.blue {
+    background-color: blue;
+}
+
+.green {
+    background-color: green;
+}
+
+</style>
