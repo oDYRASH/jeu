@@ -14,11 +14,60 @@ let rooms = {};
 const playerSpeed = 3;
 const bulletSpeed = 3 * 4.26;
 const updateInterval = 1000 / 64;
+const playerRadius = 59;
+const bulletRadius = 59/5;
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Route pour servir la page d'accueil
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'home.html'));
+});
+
+
 app.get('/game', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'game.html'));
+});
+
+// Route pour obtenir les informations des joueurs dans une salle spécifique
+app.get('/api/room/:room', (req, res) => {
+  const room = req.params.room;
+  if (rooms[room]) {
+    res.json({ players: rooms[room].players, bullets: rooms[room].bullets });
+  } else {
+    res.status(404).json({ error: "Room not found" });
+  }
+});
+
+// Route pour obtenir les informations sur toutes les salles et leurs joueurs
+app.get('/api/rooms', (req, res) => {
+  const roomData = {};
+  Object.keys(rooms).forEach(room => {
+    roomData[room] = {
+      players: rooms[room].players,
+      bullets: rooms[room].bullets
+    };
+  });
+  res.json(roomData);
+});
+
+
+// /api/getAvailableRoom
+app.get('/api/getAvailableRoom', (req, res) => {
+
+  //check if any of existing rooms only have one player in
+  for (const room in rooms) {
+    if (Object.keys(rooms[room].players).length === 1) {
+      res.json({ roomId: room });
+      return;
+    }
+  }
+
+  let roomId = 1;
+  while (rooms[`room${roomId}`]) {
+    roomId++;
+  }
+  res.json({ roomId: `room${roomId}` });
 });
 
 server.on('upgrade', (request, socket, head) => {
@@ -27,14 +76,14 @@ server.on('upgrade', (request, socket, head) => {
 
   if (pathname === '/ws' && query.room) {
     wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit('connection', ws, request, query.room);
+      wss.emit('connection', ws, request, query.room, query.username);
     });
   } else {
     socket.destroy();
   }
 });
 
-wss.on('connection', (ws, request, room) => {
+wss.on('connection', (ws, request, room, name) => {
   console.log("🌐 Nouvelle connexion WebSocket:", room);
 
   if (!rooms[room]) {
@@ -45,9 +94,22 @@ wss.on('connection', (ws, request, room) => {
   const currentRoom = rooms[room];
   const playerId = currentRoom.nextPlayerId++;
   const initialPosition = getInitialPosition(currentRoom.players);
-  currentRoom.players[playerId] = { id: playerId, x: initialPosition.x, y: initialPosition.y, color: getRandomColor(currentRoom.nextPlayerId), radius: 20, targetX: null, targetY: null };
+
+  currentRoom.players[playerId] = { 
+    id: playerId, 
+    x: initialPosition.x,
+    y: initialPosition.y, 
+    color: getRandomColor(currentRoom.nextPlayerId), 
+    radius: playerRadius, 
+    targetX: null, 
+    targetY: null,
+    score: 0, // Initialisation du score
+    name: name || `Player_id ${playerId}` // Ajout du nom du joueur
+  };
 
   ws.send(JSON.stringify({ type: 'init', playerId, players: currentRoom.players, playerSpeed, bulletSpeed }));
+  broadcast({ type: 'scoreUpdate', scores: getScores(room) }, null, room); // Envoi des scores mis à jour
+
   ws.room = room;
 
   broadcast({ type: 'newPlayer', player: currentRoom.players[playerId] }, ws, room);
@@ -65,23 +127,22 @@ wss.on('connection', (ws, request, room) => {
 
     if (data.type === 'shoot') {
       const player = currentRoom.players[data.id];
-      currentRoom.bullets.push({ x: player.x, y: player.y, targetX: data.targetX, targetY: data.targetY, radius: 5, speed: bulletSpeed, color: player.color, ownerId: player.id });
-      broadcast({ type: 'shoot', id: player.id, targetX: data.targetX, targetY: data.targetY, bulletSpeed }, ws, room);
+      currentRoom.bullets.push({ x: player.x, y: player.y, targetX: data.targetX, targetY: data.targetY, radius: bulletRadius, speed: bulletSpeed, color: player.color, ownerId: player.id });
+      broadcast({ type: 'shoot', id: player.id, targetX: data.targetX, targetY: data.targetY, bulletSpeed, bulletRadius }, null, room);
       console.log("🔫 Tir du joueur:", data);
-    }
-
-    if (data.type === 'stop') {
-      if (currentRoom.players[data.id]) {
-        currentRoom.players[data.id].targetX = null;
-        currentRoom.players[data.id].targetY = null;
-        console.log("⛔ Arrêt du déplacement du joueur:", data.id);
-      }
     }
   });
 
   ws.on('close', () => {
     delete currentRoom.players[playerId];
     broadcast({ type: 'removePlayer', id: playerId }, ws, room);
+
+    //delete room if no players
+    if (Object.keys(currentRoom.players).length === 0) {
+      delete rooms[room];
+      console.log("🏠 Salle supprimée:", room);
+    }
+
     console.log("❌ Joueur déconnecté:", playerId);
   });
 
@@ -133,6 +194,8 @@ const checkCollisions = (room) => {
         if (distance < player.radius + bullet.radius) {
           player.isDead = true;
           broadcast({ type: 'playerDead', id: player.id }, null, room);
+          rooms[room].players[bullet.ownerId].score += 1; // Mise à jour du score
+          broadcast({ type: 'scoreUpdate', scores: getScores(room) }, null, room); // Envoi des scores mis à jour
           hit = true;
           console.log("💀 Joueur touché:", player.id);
         }
@@ -143,6 +206,14 @@ const checkCollisions = (room) => {
   });
 
   rooms[room].bullets = roomBullets;
+};
+
+const getScores = (room) => {
+  const scores = [];
+  Object.values(rooms[room].players).forEach(player => {
+    scores.push({ name: player.name, score: player.score, color: player.color});
+  });
+  return scores;
 };
 
 setInterval(() => {
@@ -188,27 +259,6 @@ server.listen(PORT, () => {
 });
 
 
-// Route pour obtenir les informations des joueurs dans une salle spécifique
-app.get('/api/room/:room', (req, res) => {
-  const room = req.params.room;
-  if (rooms[room]) {
-    res.json({ players: rooms[room].players, bullets: rooms[room].bullets });
-  } else {
-    res.status(404).json({ error: "Room not found" });
-  }
-});
-
-// Route pour obtenir les informations sur toutes les salles et leurs joueurs
-app.get('/api/rooms', (req, res) => {
-  const roomData = {};
-  Object.keys(rooms).forEach(room => {
-    roomData[room] = {
-      players: rooms[room].players,
-      bullets: rooms[room].bullets
-    };
-  });
-  res.json(roomData);
-});
 
 
 // WORKING SAVE NO ROOMS

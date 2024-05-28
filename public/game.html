@@ -43,8 +43,8 @@
     // Afficher le curseur personnalisé
     const customCursor = document.getElementById('customCursor');
     document.addEventListener('mousemove', (e) => {
-      customCursor.style.left = `${e.clientX}px`;
-      customCursor.style.top = `${e.clientY}px`;
+      customCursor.style.left = `${e.clientX-3}px`;
+      customCursor.style.top = `${e.clientY-3}px`;
     });
   </script>
   
@@ -53,8 +53,17 @@
     DEFEAT
     <button id="playAgainButton">Play Again</button>
   </div>
-  
+  <div id="scoreBoard" style="position: absolute; top: 10px; left: 10px; background: rgba(255, 255, 255, 0.7); padding: 10px; border-radius: 5px; display: flex;
+  font-family: sans-serif;"></div>
+
   <script>
+
+    // stop click propagation to body when defeatOverlay is clicked
+    document.getElementById('defeatOverlay').addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
     document.getElementById('playAgainButton').addEventListener('click', () => {
       location.reload();
     });
@@ -65,6 +74,8 @@
     // Récupérer le nom de la salle depuis l'URL
     const params = new URLSearchParams(window.location.search);
     const room = params.get('room');
+    const username = params.get('username');
+
     
     if (!room) {
         alert("Room name is missing!");
@@ -72,7 +83,7 @@
     }
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${wsProtocol}//${window.location.hostname}:${window.location.port}/ws?room=${room}`);
+    const ws = new WebSocket(`${wsProtocol}//${window.location.hostname}:${window.location.port}/ws?room=${room}&username=${username}`);
     
     let players = {};
     let playerId = null;
@@ -98,8 +109,8 @@
 
     const drawBullets = () => bullets.forEach(drawBullet);
 
-    const shootBullet = (x, y, targetX, targetY, color) => {
-      bullets.push({ x, y, targetX, targetY, radius: 5, color, speed: bulletSpeed });
+    const shootBullet = (x, y, targetX, targetY, color, speed, radius) => {
+      bullets.push({ x, y, targetX, targetY, radius: radius, color, speed: speed });
     };
 
     const updateBullets = () => {
@@ -158,14 +169,18 @@
 
     document.addEventListener('keydown', (event) => {
       if (event.key === 's' || event.key === 'S') {
-        ws.send(JSON.stringify({ type: 'stop', id: playerId }));
+        ws.send(JSON.stringify({ type: 'move', id: playerId, x:null, y:null }));
+        if (players[playerId]) {
+          players[playerId].targetX = null;
+          players[playerId].targetY = null;
+        }
       }
     });
 
     const handleShoot = (x, y) => {
       if (players[playerId]) {
         const player = players[playerId];
-        shootBullet(player.x, player.y, x, y, player.color);
+        // shootBullet(player.x, player.y, x, y, player.color);
         ws.send(JSON.stringify({ type: 'shoot', id: playerId, targetX: x, targetY: y }));
       }
     };
@@ -211,9 +226,9 @@
       } else if (data.type === 'shoot') {
         const player = players[data.id];
         if (player) {
-          shootBullet(player.x, player.y, data.targetX, data.targetY, player.color);
+          shootBullet(player.x, player.y, data.targetX, data.targetY, player.color, data.bulletSpeed, data.bulletRadius);
         }
-        bulletSpeed = data.bulletSpeed;
+        // bulletSpeed = data.bulletSpeed;
         console.log("🔫 Tir détecté:", data);
       } else if (data.type === 'playerDead') {
         const player = players[data.id];
@@ -224,7 +239,23 @@
           }
         }
         console.log("💀 Joueur éliminé:", data.id);
+
+      } else if (data.type === 'scoreUpdate') {
+          updateScoreBoard(data.scores);
       }
+    };
+
+    const updateScoreBoard = (scores) => {
+      const scoreBoard = document.getElementById('scoreBoard');
+      scoreBoard.innerHTML = '';
+      scores.forEach(score => {
+        const scoreItem = document.createElement('div');
+        scoreItem.textContent = `${score.name}: ${score.score}`;
+        scoreItem.style.color = score.color;    
+        scoreItem.style.fontWeight = 'bold';
+        scoreItem.style.margin = '5px';
+        scoreBoard.appendChild(scoreItem);
+      });
     };
 
     document.body.addEventListener('contextmenu', event => event.preventDefault());

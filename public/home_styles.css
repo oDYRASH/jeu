@@ -1,0 +1,12 @@
+#homeContainer {
+    text-align: center;
+    background: white;
+    padding: 2em;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+#homeContainer input, #homeContainer button {
+    margin: 0.5em 0;
+    padding: 0.5em;
+    font-size: 1em;
+}

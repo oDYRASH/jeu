@@ -3,87 +3,108 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Leaderboard</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>Game Home</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+        #homeContainer {
+            text-align: center;
+            background: white;
+            padding: 2em;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        #homeContainer input, #homeContainer button {
+            margin: 0.5em 0;
+            padding: 0.5em;
+            font-size: 1em;
+        }
+    </style>
 </head>
 <body>
-    <div class="leaderboard">
-        <h1>Leaderboard</h1>
-        <div class="entry">
-            <div class="rank">1.</div>
-            <div class="circle red"></div>
-            <div class="player">Player1</div>
-            <div class="score">5000</div>
-        </div>
-        <div class="entry">
-            <div class="rank">2.</div>
-            <div class="circle blue"></div>
-            <div class="player">Player2</div>
-            <div class="score">4500</div>
-        </div>
-        <div class="entry">
-            <div class="rank">3.</div>
-            <div class="circle green"></div>
-            <div class="player">Player3</div>
-            <div class="score">4000</div>
-        </div>
+    <div id="homeContainer">
+        <h1>Bienvenue au Jeu</h1>
+        <input type="text" id="username" placeholder="Entrez votre pseudonyme" required>
+        <button id="playButton">Jouer</button>
     </div>
+
+    <script>
+        // Générer un pseudonyme aléatoire
+        function generateRandomUsername() {
+            return 'Player_' + Math.floor(Math.random() * 10000);
+        }
+
+        document.getElementById('username').value = generateRandomUsername();
+
+        document.getElementById('playButton').addEventListener('click', () => {
+            const username = document.getElementById('username').value;
+            if (username) {
+                // Récupérer l'ID de la salle non utilisée
+                fetch('/api/getAvailableRoom')
+                    .then(response => response.json())
+                    .then(data => {
+                        const roomId = data.roomId;
+                        window.location.href = `/game?username=${username}&room=${roomId}`;
+                    })
+                    .catch(error => {
+                        console.error('Erreur lors de la récupération de l\'ID de la salle:', error);
+                    });
+            } else {
+                alert("Veuillez entrer un pseudonyme.");
+            }
+        });
+
+        document.getElementById('spectateButton').addEventListener('click', () => {
+            // Récupérer l'ID de la salle non utilisée
+            fetch('/api/getAvailableRoom')
+                .then(response => response.json())
+                .then(data => {
+                    const roomId = data.roomId;
+                    window.location.href = `/game?room=${roomId}&spectator=true`;
+                })
+                .catch(error => {
+                    console.error('Erreur lors de la récupération de l\'ID de la salle:', error);
+                });
+        });
+    </script>
 </body>
 </html>
-<style>
-    body {
-    background-color: #add8e6; /* Light blue background */
-    font-family: Arial, sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    margin: 0;
-}
 
-.leaderboard {
-    background-color: #fff;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    width: 300px;
-    text-align: center;
-}
 
-.leaderboard h1 {
-    margin: 0 0 20px;
-    font-size: 24px;
-    color: #000;
-}
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+    <title>Game Home</title>
+    <style>
+        /* Insérez ici le code CSS fourni */
+    </style>
+</head>
+<body>
+    <div id="homeContainer">
+        <h1>Bienvenue au Jeu</h1>
+        <input type="text" id="username" placeholder="Entrez votre pseudonyme" required>
+        <button id="playButton">Jouer</button>
+    </div>
 
-.entry {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: 10px 0;
-}
-
-.rank, .player, .score {
-    font-size: 18px;
-    color: #000;
-}
-
-.circle {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-}
-
-.red {
-    background-color: red;
-}
-
-.blue {
-    background-color: blue;
-}
-
-.green {
-    background-color: green;
-}
-
-</style>
+    <script>
+        // JavaScript Frontend
+        document.getElementById('playButton').addEventListener('click', () => {
+            const username = document.getElementById('username').value;
+            if (username) {
+                window.location.href = `/game?username=${username}&room=1`;
+            } else {
+                alert("Veuillez entrer un pseudonyme.");
+            }
+        });
+    </script>
+</body>
+</html> -->
