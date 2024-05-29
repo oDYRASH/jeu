@@ -60,18 +60,18 @@
             }
         });
 
-        document.getElementById('spectateButton').addEventListener('click', () => {
+        // document.getElementById('spectateButton').addEventListener('click', () => {
             // Récupérer l'ID de la salle non utilisée
-            fetch('/api/getAvailableRoom')
-                .then(response => response.json())
-                .then(data => {
-                    const roomId = data.roomId;
-                    window.location.href = `/game?room=${roomId}&spectator=true`;
-                })
-                .catch(error => {
-                    console.error('Erreur lors de la récupération de l\'ID de la salle:', error);
-                });
-        });
+        //     fetch('/api/getAvailableRoom')
+        //         .then(response => response.json())
+        //         .then(data => {
+        //             const roomId = data.roomId;
+        //             window.location.href = `/game?room=${roomId}&spectator=true`;
+        //         })
+        //         .catch(error => {
+        //             console.error('Erreur lors de la récupération de l\'ID de la salle:', error);
+        //         });
+        // });
     </script>
 </body>
 </html>

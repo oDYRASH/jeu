@@ -4,43 +4,41 @@ const http = require('http');
 const WebSocket = require('ws');
 const url = require('url');
 
+//models import
+const Player = require('./models/player');
+const Bullet = require('./models/bullet');
+const Room = require('./models/room');
+
+//app creation / settings
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ noServer: true });
 
-let rooms = {};
-
-// Paramètres dynamiques
-const playerSpeed = 3;
-const bulletSpeed = 3 * 4.26;
+// tick rate
 const updateInterval = 1000 / 64;
-const playerRadius = 59;
-const bulletRadius = 59/5;
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Route pour servir la page d'accueil
+// App routes
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'home.html'));
 });
-
 
 app.get('/game', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'game.html'));
 });
 
-// Route pour obtenir les informations des joueurs dans une salle spécifique
 app.get('/api/room/:room', (req, res) => {
-  const room = req.params.room;
-  if (rooms[room]) {
-    res.json({ players: rooms[room].players, bullets: rooms[room].bullets });
+  const room = Room.getRoomById(req.params.room);
+  if (room) {
+    res.json({ players: room.players, bullets: room.bullets });
   } else {
     res.status(404).json({ error: "Room not found" });
   }
 });
 
-// Route pour obtenir les informations sur toutes les salles et leurs joueurs
 app.get('/api/rooms', (req, res) => {
+  const rooms = Room.getAllRooms();
   const roomData = {};
   Object.keys(rooms).forEach(room => {
     roomData[room] = {
@@ -51,25 +49,18 @@ app.get('/api/rooms', (req, res) => {
   res.json(roomData);
 });
 
-
-// /api/getAvailableRoom
 app.get('/api/getAvailableRoom', (req, res) => {
-
-  //check if any of existing rooms only have one player in
-  for (const room in rooms) {
-    if (Object.keys(rooms[room].players).length === 1) {
-      res.json({ roomId: room });
-      return;
-    }
+  const availableRoom = Room.getAvailableRoom();
+  if (availableRoom) {
+    res.json({ roomId: availableRoom.id });
+  } else {
+    const newRoom = Room.createNewRoom();
+    res.json({ roomId: newRoom.id });
   }
-
-  let roomId = 1;
-  while (rooms[`room${roomId}`]) {
-    roomId++;
-  }
-  res.json({ roomId: `room${roomId}` });
 });
 
+
+// Websocket connection
 server.on('upgrade', (request, socket, head) => {
   const pathname = url.parse(request.url).pathname;
   const query = url.parse(request.url, true).query;
@@ -84,92 +75,70 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 wss.on('connection', (ws, request, room, name) => {
-  console.log("🌐 Nouvelle connexion WebSocket:", room);
-
-  if (!rooms[room]) {
-    rooms[room] = { players: {}, bullets: [], nextPlayerId: 1 };
-    console.log("🏠 Nouvelle salle créée:", room);
+  let currentRoom = Room.getRoomById(room);
+  if (!currentRoom) {
+    currentRoom = new Room(room);
   }
 
-  const currentRoom = rooms[room];
-  const playerId = currentRoom.nextPlayerId++;
-  const initialPosition = getInitialPosition(currentRoom.players);
+  const player = currentRoom.addPlayer(name);
 
-  currentRoom.players[playerId] = { 
-    id: playerId, 
-    x: initialPosition.x,
-    y: initialPosition.y, 
-    color: getRandomColor(currentRoom.nextPlayerId), 
-    radius: playerRadius, 
-    targetX: null, 
-    targetY: null,
-    score: 0, // Initialisation du score
-    name: name || `Player_id ${playerId}` // Ajout du nom du joueur
-  };
+  // Set initial positions for first and second player
+  if (Object.keys(currentRoom.players).length === 1) {
+    player.setPosition(100, 100);
+  } else if (Object.keys(currentRoom.players).length === 2) {
+    const secondPlayer = Object.values(currentRoom.players).find(p => p.getId() !== player.getId());
+    secondPlayer.setPosition(100, 100);
+    player.setPosition(1500, 700);
 
-  ws.send(JSON.stringify({ type: 'init', playerId, players: currentRoom.players, playerSpeed, bulletSpeed }));
-  broadcast({ type: 'scoreUpdate', scores: getScores(room) }, null, room); // Envoi des scores mis à jour
+    // Notify both players that the game is ready
+    broadcast({ type: 'respawn', id: 1, x: 100, y: 100 }, null, room);
+    broadcast({ type: 'respawn', id: 2, x: 1500, y: 700 }, null, room);
+
+  }
+
+  ws.send(JSON.stringify({ type: 'init', playerId: player.getId(), players: currentRoom.players }));
+  broadcast({ type: 'scoreUpdate', scores: getScores(room) }, null, room);
 
   ws.room = room;
 
-  broadcast({ type: 'newPlayer', player: currentRoom.players[playerId] }, ws, room);
-  console.log("👤 Joueur connecté:", playerId);
+  broadcast({ type: 'newPlayer', player }, ws, room);
 
   ws.on('message', (message) => {
     const data = JSON.parse(message);
-    console.log("📩 Message reçu:", data);
 
     if (data.type === 'move') {
       updatePlayerTarget(data, currentRoom.players);
-      broadcast({ type: 'update', id: data.id, targetX: data.x, targetY: data.y, playerSpeed }, ws, room);
-      console.log("🚶 Déplacement du joueur:", data);
+      broadcast({ type: 'update', id: data.id, targetX: data.x, targetY: data.y }, ws, room);
     }
 
     if (data.type === 'shoot') {
       const player = currentRoom.players[data.id];
-      currentRoom.bullets.push({ x: player.x, y: player.y, targetX: data.targetX, targetY: data.targetY, radius: bulletRadius, speed: bulletSpeed, color: player.color, ownerId: player.id });
-      broadcast({ type: 'shoot', id: player.id, targetX: data.targetX, targetY: data.targetY, bulletSpeed, bulletRadius }, null, room);
-      console.log("🔫 Tir du joueur:", data);
+      const bullet = new Bullet(player.getX(), player.getY(), data.targetX, data.targetY, player.getId());
+      currentRoom.bullets.push(bullet);
+      broadcast({ type: 'shoot', bullet }, null, room);
     }
   });
 
   ws.on('close', () => {
-    delete currentRoom.players[playerId];
-    broadcast({ type: 'removePlayer', id: playerId }, ws, room);
-
-    //delete room if no players
-    if (Object.keys(currentRoom.players).length === 0) {
-      delete rooms[room];
-      console.log("🏠 Salle supprimée:", room);
-    }
-
-    console.log("❌ Joueur déconnecté:", playerId);
+    currentRoom.removePlayer(player.getId());
+    broadcast({ type: 'removePlayer', id: player.getId() }, ws, room);
   });
 
   ws.on('error', (err) => {
-    console.error('⚠️ Erreur WebSocket:', err);
+    if (err.code !== 'ECONNRESET') {
+      console.error('⚠️ Erreur WebSocket:', err);
+    }
   });
 });
 
-const getRandomColor = (nextPlayerId) => {
-  if (nextPlayerId == 2) return '#D33F49';
-  if (nextPlayerId == 3) return '#1C448E';
 
-  const letters = '0123456789ABCDEF';
-  return '#' + Array.from({ length: 6 }).map(() => letters[Math.floor(Math.random() * 16)]).join('');
-};
 
-const getInitialPosition = (players) => {
-  const playerCount = Object.keys(players).length;
-  if (playerCount === 0) return { x: 300, y: 200 };
-  if (playerCount === 1) return { x: 500, y: 400 };
-  return { x: Math.random() * 800, y: Math.random() * 600 };
-};
 
+
+// server-side functions
 const updatePlayerTarget = ({ id, x, y }, players) => {
   if (players[id]) {
-    players[id].targetX = x;
-    players[id].targetY = y;
+    players[id].updateTarget(x, y);
   }
 };
 
@@ -182,74 +151,62 @@ const broadcast = (data, excludeWs, room) => {
 };
 
 const checkCollisions = (room) => {
-  const roomPlayers = rooms[room].players;
-  let roomBullets = rooms[room].bullets;
+  const roomInstance = Room.getRoomById(room);
+  const roomPlayers = roomInstance.players;
+  let roomBullets = roomInstance.bullets;
 
-  roomBullets = roomBullets.filter(bullet => {
-    let hit = false;
+  let xxxroomBullets = roomBullets.filter(bullet => {
+  //   let hit = false;
 
     Object.values(roomPlayers).forEach(player => {
-      if (!player.isDead && bullet.ownerId !== player.id) {
-        const distance = Math.sqrt((bullet.x - player.x) ** 2 + (bullet.y - player.y) ** 2);
-        if (distance < player.radius + bullet.radius) {
-          player.isDead = true;
-          broadcast({ type: 'playerDead', id: player.id }, null, room);
-          rooms[room].players[bullet.ownerId].score += 1; // Mise à jour du score
-          broadcast({ type: 'scoreUpdate', scores: getScores(room) }, null, room); // Envoi des scores mis à jour
+      if (!player.isPlayerDead() && bullet.ownerId !== player.getId()) {
+        const distance = Math.sqrt((bullet.x - player.getX()) ** 2 + (bullet.y - player.getY()) ** 2);
+        if (distance < player.getRadius() + bullet.radius) {
+
+          roomPlayers[bullet.ownerId].incrementScore();
+
+          roomPlayers[1].respawn(100, 100);
+          broadcast({ type: 'respawn', id: 1, x: 100, y: 100 }, null, room);
+
+          roomPlayers[2].respawn(1500, 700);
+          broadcast({ type: 'respawn', id: 2, x: 1500, y: 700 }, null, room);
+          broadcast({ type: 'scoreUpdate', scores: getScores(room) }, null, room);
+
+          roomInstance.bullets = [];
           hit = true;
-          console.log("💀 Joueur touché:", player.id);
+          return false;
+
+        } else if (bullet.x === bullet.targetX && bullet.y === bullet.targetY) {
+          hit = true;
         }
       }
     });
 
-    return !hit;
+  //   return !hit;
   });
 
-  rooms[room].bullets = roomBullets;
+  // roomInstance.bullets = roomBullets;
 };
+
+
+
 
 const getScores = (room) => {
   const scores = [];
-  Object.values(rooms[room].players).forEach(player => {
-    scores.push({ name: player.name, score: player.score, color: player.color});
+  Object.values(Room.getRoomById(room).players).forEach(player => {
+    scores.push({ name: player.getName(), score: player.getScore(), color: player.getColor() });
   });
   return scores;
 };
 
+
+// MAIN SERVER LOOP
 setInterval(() => {
-  Object.keys(rooms).forEach(room => {
-    // Mettre à jour les positions des joueurs
-    Object.values(rooms[room].players).forEach(player => {
-      if (player.targetX !== null && player.targetY !== null) {
-        const dx = player.targetX - player.x;
-        const dy = player.targetY - player.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+  Player.updateAllPositions();
+  Bullet.updateAllPositions();
 
-        if (distance < playerSpeed) {
-          player.x = player.targetX;
-          player.y = player.targetY;
-          player.targetX = null;
-          player.targetY = null;
-        } else {
-          player.x += (dx / distance) * playerSpeed;
-          player.y += (dy / distance) * playerSpeed;
-        }
-      }
-    });
-
-    // Mettre à jour les positions des balles
-    rooms[room].bullets = rooms[room].bullets.filter(bullet => {
-      const dx = bullet.targetX - bullet.x;
-      const dy = bullet.targetY - bullet.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance < bullet.speed) return false;
-      bullet.x += (dx / distance) * bullet.speed;
-      bullet.y += (dy / distance) * bullet.speed;
-      return true;
-    });
-
-    checkCollisions(room);
+  Object.keys(Room.getAllRooms()).forEach(roomId => {
+    checkCollisions(roomId);
   });
 }, updateInterval);
 
@@ -257,158 +214,3 @@ const PORT = 10000;
 server.listen(PORT, () => {
   console.log(`🚀 Serveur lancé sur le port ${PORT}`);
 });
-
-
-
-
-// WORKING SAVE NO ROOMS
-// const express = require('express');
-// const path = require('path');
-// const http = require('http');
-// const WebSocket = require('ws');
-
-// const app = express();
-// const server = http.createServer(app);
-// const wss = new WebSocket.Server({ server });
-
-// let players = {};
-// let bullets = [];
-// let nextPlayerId = 1;
-
-// // Dynamic settings
-// const playerSpeed = 3;
-// const bulletSpeed = 3*4.26;
-// const updateInterval = 1000 / 64;
-
-// app.use(express.static(path.join(__dirname, 'public')));
-
-// app.get('/game', (req, res) => {
-//   res.sendFile(path.join(__dirname, 'public', 'game.html'));
-// });
-
-// wss.on('connection', (ws) => {
-//   const playerId = nextPlayerId++;
-//   const initialPosition = getInitialPosition();
-//   players[playerId] = { id: playerId, x: initialPosition.x, y: initialPosition.y, color: getRandomColor(), radius: 20, targetX: null, targetY: null };
-
-//   ws.send(JSON.stringify({ type: 'init', playerId, players, playerSpeed, bulletSpeed }));
-
-//   broadcast({ type: 'newPlayer', player: players[playerId] }, ws);
-
-//   ws.on('message', (message) => {
-//     const data = JSON.parse(message);
-
-//     if (data.type === 'move') {
-//       updatePlayerTarget(data);
-//       broadcast({ type: 'update', id: data.id, targetX: data.x, targetY: data.y, playerSpeed });
-//     }
-
-//     if (data.type === 'shoot') {
-//       const player = players[data.id];
-//       bullets.push({ x: player.x, y: player.y, targetX: data.targetX, targetY: data.targetY, radius: 5, speed: bulletSpeed, color: player.color, ownerId: player.id });
-//       broadcast({ type: 'shoot', id: player.id, targetX: data.targetX, targetY: data.targetY, bulletSpeed });
-//     }
-
-//    if (data.type === 'stop') {
-//     if (players[data.id]) {
-//       players[data.id].targetX = null;
-//       players[data.id].targetY = null;
-//     }
-//   }
-//   });
-
-//   ws.on('close', () => {
-//     delete players[playerId];
-//     broadcast({ type: 'removePlayer', id: playerId });
-//   });
-
-//   ws.on('error', (err) => {
-//     console.error('WebSocket error:', err);
-//   });
-// });
-
-// const getRandomColor = () => {
-
-//   if (nextPlayerId == 2) return '#D33F49';
-//   if (nextPlayerId == 3) return '#1C448E';
-
-//   const letters = '0123456789ABCDEF';
-//   return '#' + Array.from({ length: 6 }).map(() => letters[Math.floor(Math.random() * 16)]).join('');
-// };
-
-// const getInitialPosition = () => {
-//   const playerCount = Object.keys(players).length;
-//   if (playerCount === 0) return { x: 300, y: 200 };
-//   if (playerCount === 1) return { x: 500, y: 400 };
-//   return { x: Math.random() * 800, y: Math.random() * 600 };
-// };
-
-// const updatePlayerTarget = ({ id, x, y }) => {
-//   if (players[id]) {
-//     players[id].targetX = x;
-//     players[id].targetY = y;
-//   }
-// };
-
-// const broadcast = (data, excludeWs) => {
-//   wss.clients.forEach(client => {
-//     if (client !== excludeWs && client.readyState === WebSocket.OPEN) {
-//       client.send(JSON.stringify(data));
-//     }
-//   });
-// };
-
-// const checkCollisions = () => {
-//   Object.values(players).forEach(player => {
-//     if (!player.isDead) {
-//       bullets = bullets.filter(bullet => {
-//         if (bullet.ownerId === player.id) return true;
-//         const distance = Math.sqrt((bullet.x - player.x) ** 2 + (bullet.y - player.y) ** 2);
-//         if (distance < player.radius + bullet.radius) {
-//           player.isDead = true;
-//           broadcast({ type: 'playerDead', id: player.id });
-//           return false;
-//         }
-//         return true;
-//       });
-//     }
-//   });
-// };
-
-// setInterval(() => {
-//   Object.values(players).forEach(player => {
-//     if (player.targetX !== null && player.targetY !== null) {
-//       const dx = player.targetX - player.x;
-//       const dy = player.targetY - player.y;
-//       const distance = Math.sqrt(dx * dx + dy * dy);
-
-//       if (distance < playerSpeed) {
-//         player.x = player.targetX;
-//         player.y = player.targetY;
-//         player.targetX = null;
-//         player.targetY = null;
-//       } else {
-//         player.x += (dx / distance) * playerSpeed;
-//         player.y += (dy / distance) * playerSpeed;
-//       }
-//     }
-//   });
-
-//   bullets = bullets.filter(bullet => {
-//     const dx = bullet.targetX - bullet.x;
-//     const dy = bullet.targetY - bullet.y;
-//     const distance = Math.sqrt(dx * dx + dy * dy);
-
-//     if (distance < bullet.speed) return false;
-//     bullet.x += (dx / distance) * bullet.speed;
-//     bullet.y += (dy / distance) * bullet.speed;
-//     return true;
-//   });
-
-//   checkCollisions();
-// }, updateInterval);
-
-// const PORT = 10000;
-// server.listen(PORT, () => {
-//   console.log(`Server is running on port ${PORT}`);
-// });

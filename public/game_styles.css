@@ -89,3 +89,15 @@
 [fullscreen] #fullscreen-button svg:nth-child(2) {
     display: inline-block;
 }
+
+#cooldown-div{
+  height: 356px;
+  width: 356px;
+  position: absolute;
+  top: 200px;
+  justify-self: center;
+  align-items: center;
+  font-size: 167px;
+  opacity: 0.6;
+  border-radius: 1000px;
+}

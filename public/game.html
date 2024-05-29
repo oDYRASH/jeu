@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="./game_styles.css">
   <title>Canvas Game</title>
 </head>
+
 <body>
   <div class="custom-cursor" id="customCursor"></div>
 
@@ -13,9 +15,9 @@
     // Activer le plein écran
     if (document.fullscreenEnabled) {
       const fullscreen_button = document.createElement("span");
-      fullscreen_button.setAttribute('id','fullscreen-button');
+      fullscreen_button.setAttribute('id', 'fullscreen-button');
       fullscreen_button.addEventListener("click", toggle_fullscreen);
-      fullscreen_button.innerHTML  = `
+      fullscreen_button.innerHTML = `
           <svg viewBox="0 0 24 24">
               <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 
               7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
@@ -31,10 +33,10 @@
     function toggle_fullscreen() {
       if (!document.fullscreenElement) {
         document.body.requestFullscreen();
-        document.body.setAttribute("fullscreen",""); 
+        document.body.setAttribute("fullscreen", "");
       } else {
         document.exitFullscreen();
-        document.body.removeAttribute("fullscreen"); 
+        document.body.removeAttribute("fullscreen");
       }
     } 
   </script>
@@ -43,18 +45,23 @@
     // Afficher le curseur personnalisé
     const customCursor = document.getElementById('customCursor');
     document.addEventListener('mousemove', (e) => {
-      customCursor.style.left = `${e.clientX-3}px`;
-      customCursor.style.top = `${e.clientY-3}px`;
+      customCursor.style.left = `${e.clientX - 3}px`;
+      customCursor.style.top = `${e.clientY - 3}px`;
     });
   </script>
-  
+
   <canvas id="gameCanvas" width="1600" height="800"></canvas>
+  <div id="cooldown-div"></div>
   <div id="defeatOverlay" style="display: none;">
     DEFEAT
     <button id="playAgainButton">Play Again</button>
   </div>
   <div id="scoreBoard" style="position: absolute; top: 10px; left: 10px; background: rgba(255, 255, 255, 0.7); padding: 10px; border-radius: 5px; display: flex;
   font-family: sans-serif;"></div>
+  <div id="reloadIndicator"
+    style="position: absolute; bottom: 50px; right: 10px; background: rgba(255, 0, 0, 0.7); padding: 10px; border-radius: 5px; display: none;">
+    Reloading...
+  </div>
 
   <script>
 
@@ -70,31 +77,36 @@
 
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    
+
     // Récupérer le nom de la salle depuis l'URL
     const params = new URLSearchParams(window.location.search);
     const room = params.get('room');
     const username = params.get('username');
 
-    
+
     if (!room) {
-        alert("Room name is missing!");
-        window.location.href = '/';
+      alert("Room name is missing!");
+      window.location.href = '/';
     }
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${wsProtocol}//${window.location.hostname}:${window.location.port}/ws?room=${room}&username=${username}`);
-    
+
+
     let players = {};
-    let playerId = null;
-    let playerSpeed = 3;
-    let bulletSpeed = 3*4.26;
     let bullets = [];
+
+    let playerId = null;
+
+    let shootCount = 0;
+    let isReloading = false;
+
+    let gameIsStopped = false;
 
     const drawCircle = (circle) => {
       ctx.beginPath();
       ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
-      ctx.fillStyle = circle.color;
+      ctx.fillStyle = circle.id === playerId ? 'blue' : 'red';
       ctx.fill();
       ctx.closePath();
     };
@@ -102,16 +114,12 @@
     const drawBullet = (bullet) => {
       ctx.beginPath();
       ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
-      ctx.fillStyle = bullet.color;
+      ctx.fillStyle = bullet.ownerId === playerId ? 'blue' : 'red';
       ctx.fill();
       ctx.closePath();
     };
 
     const drawBullets = () => bullets.forEach(drawBullet);
-
-    const shootBullet = (x, y, targetX, targetY, color, speed, radius) => {
-      bullets.push({ x, y, targetX, targetY, radius: radius, color, speed: speed });
-    };
 
     const updateBullets = () => {
       bullets = bullets.filter(bullet => {
@@ -141,19 +149,21 @@
     const updatePlayerPositions = () => {
       for (const id in players) {
         const player = players[id];
+        const playerVelocity = player.velocity;
+
         if (player.targetX !== null && player.targetY !== null) {
           const dx = player.targetX - player.x;
           const dy = player.targetY - player.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
 
-          if (distance < playerSpeed) {
+          if (distance < playerVelocity) {
             player.x = player.targetX;
             player.y = player.targetY;
             player.targetX = null;
             player.targetY = null;
           } else {
-            player.x += (dx / distance) * playerSpeed;
-            player.y += (dy / distance) * playerSpeed;
+            player.x += (dx / distance) * playerVelocity;
+            player.y += (dy / distance) * playerVelocity;
           }
         }
       }
@@ -168,8 +178,8 @@
     };
 
     document.addEventListener('keydown', (event) => {
-      if (event.key === 's' || event.key === 'S') {
-        ws.send(JSON.stringify({ type: 'move', id: playerId, x:null, y:null }));
+      if (event.key === 's' || event.key === 'S' && !gameIsStopped) {
+        ws.send(JSON.stringify({ type: 'move', id: playerId, x: null, y: null }));
         if (players[playerId]) {
           players[playerId].targetX = null;
           players[playerId].targetY = null;
@@ -177,59 +187,43 @@
       }
     });
 
-    const handleShoot = (x, y) => {
-      if (players[playerId]) {
-        const player = players[playerId];
-        // shootBullet(player.x, player.y, x, y, player.color);
-        ws.send(JSON.stringify({ type: 'shoot', id: playerId, targetX: x, targetY: y }));
-      }
-    };
-
     document.body.addEventListener('mousedown', (event) => {
       const x = event.offsetX;
       const y = event.offsetY;
-      if (event.button === 2) {
+      if (event.button === 2 && !gameIsStopped) {
         event.preventDefault();
         ws.send(JSON.stringify({ type: 'move', id: playerId, x, y }));
         if (players[playerId]) {
           players[playerId].targetX = x;
           players[playerId].targetY = y;
         }
-      } else if (event.button === 0) {
+      } else if (event.button === 0 && !isReloading && !gameIsStopped) {
         handleShoot(x, y);
       }
     });
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      console.log("🔔 Message reçu du serveur:", data);
+      //console.log("🔔 Message reçu du serveur:", data);
 
       if (data.type === 'init') {
         playerId = data.playerId;
         players = data.players;
-        playerSpeed = data.playerSpeed;
-        bulletSpeed = data.bulletSpeed;
-        console.log("🔧 Initialisation du joueur:", data);
       } else if (data.type === 'update') {
         if (players[data.id]) {
           players[data.id].targetX = data.targetX;
           players[data.id].targetY = data.targetY;
         }
-        playerSpeed = data.playerSpeed;
-        console.log("🔄 Mise à jour de la position du joueur:", data);
+        //console.log("🔄 Mise à jour de la position du joueur:", data);
       } else if (data.type === 'newPlayer') {
         players[data.player.id] = data.player;
-        console.log("🆕 Nouveau joueur connecté:", data.player);
+        //console.log("🆕 Nouveau joueur connecté:", data.player);
       } else if (data.type === 'removePlayer') {
         delete players[data.id];
-        console.log("❌ Joueur déconnecté:", data.id);
+        //console.log("❌ Joueur déconnecté:", data.id);
       } else if (data.type === 'shoot') {
-        const player = players[data.id];
-        if (player) {
-          shootBullet(player.x, player.y, data.targetX, data.targetY, player.color, data.bulletSpeed, data.bulletRadius);
-        }
-        // bulletSpeed = data.bulletSpeed;
-        console.log("🔫 Tir détecté:", data);
+        // console.log("BULLET from server :", data.bullet)
+        bullets.push(data.bullet)
       } else if (data.type === 'playerDead') {
         const player = players[data.id];
         if (player) {
@@ -238,10 +232,78 @@
             document.getElementById('defeatOverlay').style.display = 'flex';
           }
         }
-        console.log("💀 Joueur éliminé:", data.id);
+        //console.log("💀 Joueur éliminé:", data.id);
+
+      } else if (data.type === 'respawn') {
+
+        console.log("GAME STOP")
+        gameIsStopped = true;
+
+        const player = players[data.id];
+
+        if (player) {
+          player.x = data.x;
+          player.y = data.y;
+
+          player.targetX = null;
+          player.targetY = null;
+
+          player.isDead = false;
+        }
+
+        startGame();
 
       } else if (data.type === 'scoreUpdate') {
-          updateScoreBoard(data.scores);
+        updateScoreBoard(data.scores);
+      } else if (data.type === 'gameReady') {
+        alert('The game is ready! Both players have joined.');
+      }
+    };
+
+    const startGame = () => {
+
+      gameIsStopped = true;
+      const counter = document.getElementById('cooldown-div')
+
+      counter.style.display = 'block';
+      document.body.style.backgroundColor = '#919ab3';
+
+
+      counter.innerText = '-';
+      
+      setTimeout(() => {
+        
+        counter.innerText = '--';
+        
+        setTimeout(() => {
+          
+          counter.innerText = '---';
+          
+                    
+          setTimeout(() => {
+          
+            setTimeout(() => {
+              document.body.style.backgroundColor = '#D1D8EC';
+              counter.style.display = 'none';
+              gameIsStopped = false;
+              
+            }, 200);
+            
+          }, 433); 
+        }, 433); 
+      }, 433); 
+
+    };
+
+
+    const handleShoot = (x, y) => {
+      if (players[playerId]) {
+        const player = players[playerId];
+        // shootBullet(player.x, player.y, x, y, player.color);
+        shootCount++;
+        ws.send(JSON.stringify({ type: 'shoot', id: playerId, targetX: x, targetY: y }));
+
+        if (shootCount >= 3) startReloading();
       }
     };
 
@@ -251,250 +313,29 @@
       scores.forEach(score => {
         const scoreItem = document.createElement('div');
         scoreItem.textContent = `${score.name}: ${score.score}`;
-        scoreItem.style.color = score.color;    
         scoreItem.style.fontWeight = 'bold';
         scoreItem.style.margin = '5px';
         scoreBoard.appendChild(scoreItem);
       });
     };
 
+    const reloadIndicator = document.getElementById('reloadIndicator');
+
+    const startReloading = () => {
+      isReloading = true;
+      reloadIndicator.style.display = 'block';
+      //console.log("🔄 Reloading...");
+      setTimeout(() => {
+        shootCount = 0;
+        isReloading = false;
+        reloadIndicator.style.display = 'none';
+        //console.log("✅ Reload complete.");
+      }, 1800); // Temps de rechargement de 3 secondes
+    };
+
     document.body.addEventListener('contextmenu', event => event.preventDefault());
     requestAnimationFrame(animate);
   </script>
 </body>
+
 </html>
-
-
-<!-- WORKING SAVE NO ROOMS -->
-<!-- <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="./game_styles.css">
-  <title>Canvas Game</title>
-</head>
-<body>
-  <div class="custom-cursor" id="customCursor"></div>
-
-  <script>
-    // full screen
-    if (document.fullscreenEnabled) {
-    const fullscreen_button = document.createElement("span");
-    fullscreen_button.setAttribute('id','fullscreen-button');
-    fullscreen_button.addEventListener("click", toggle_fullscreen);
-    fullscreen_button.innerHTML  = `
-        <svg viewBox="0 0 24 24">
-            <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 
-            7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-        </svg>
-        <svg viewBox="0 0 24 24">
-            <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 
-            11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
-        </svg>
-    `;
-    document.body.appendChild(fullscreen_button);
-}
-
-function toggle_fullscreen() {
-    if (!document.fullscreenElement) {
-      document.body.requestFullscreen();
-      document.body.setAttribute("fullscreen",""); 
-    } else {
-        document.exitFullscreen();
-        document.body.removeAttribute("fullscreen"); 
-    }
-} 
-  </script>
-
-  <script>
-    // cursor black dot
-      const customCursor = document.getElementById('customCursor');
-
-      document.addEventListener('mousemove', (e) => {
-          customCursor.style.left = `${e.clientX}px`;
-          customCursor.style.top = `${e.clientY}px`;
-      });
-  </script>
-  <canvas id="gameCanvas" width="1600" height="800"></canvas>
-  <div id="defeatOverlay" style="display: none;">
-    DEFEAT
-    <button id="playAgainButton">Play Again</button>
-  </div>
-  
-  <script>
-    document.getElementById('playAgainButton').addEventListener('click', () => {
-      location.reload();
-    });
-
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    // // // NOROOM
-    // const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // const ws = new WebSocket(`${wsProtocol}//${window.location.hostname}:${window.location.port}`);
-    
-    // WROOM
-    const params = new URLSearchParams(window.location.search);
-    const room = params.get('room');
-    
-    if (!room) {
-        alert("Room name is missing!");
-        window.location.href = '/';
-    }
-
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${wsProtocol}//${window.location.hostname}:${window.location.port}/ws?room=${room}`);
-    
-    
-    let players = {};
-    let playerId = null;
-    let playerSpeed = 3;
-    let bulletSpeed = 3*4.26;
-    let bullets = [];
-
-    const drawCircle = (circle) => {
-
-      ctx.beginPath();
-      ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
-      ctx.fillStyle = circle.color;
-      ctx.fill();
-      ctx.closePath();
-
-    };
-
-    const drawBullet = (bullet) => {
-      ctx.beginPath();
-      ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
-      ctx.fillStyle = bullet.color;
-      ctx.fill();
-      ctx.closePath();
-    };
-
-    const drawBullets = () => bullets.forEach(drawBullet);
-
-    const shootBullet = (x, y, targetX, targetY, color) => {
-      bullets.push({ x, y, targetX, targetY, radius: 5, color, speed: bulletSpeed });
-    };
-
-    const updateBullets = () => {
-      bullets = bullets.filter(bullet => {
-        const dx = bullet.targetX - bullet.x;
-        const dy = bullet.targetY - bullet.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance < bullet.speed) {
-          return false;
-        } else {
-          bullet.x += (dx / distance) * bullet.speed;
-          bullet.y += (dy / distance) * bullet.speed;
-          return true;
-        }
-      });
-    };
-
-    const drawPlayers = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const id in players) {
-        if (!players[id].isDead) {
-          drawCircle(players[id]);
-        }
-      }
-    };
-
-    const updatePlayerPositions = () => {
-      for (const id in players) {
-        const player = players[id];
-        if (player.targetX !== null && player.targetY !== null) {
-          const dx = player.targetX - player.x;
-          const dy = player.targetY - player.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-
-          if (distance < playerSpeed) {
-            player.x = player.targetX;
-            player.y = player.targetY;
-            player.targetX = null;
-            player.targetY = null;
-          } else {
-            player.x += (dx / distance) * playerSpeed;
-            player.y += (dy / distance) * playerSpeed;
-          }
-        }
-      }
-    };
-
-    const animate = () => {
-      updatePlayerPositions();
-      updateBullets();
-      drawPlayers();
-      drawBullets();
-      requestAnimationFrame(animate);
-    };
-
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 's' || event.key === 'S') {
-        ws.send(JSON.stringify({ type: 'stop', id: playerId }));
-      }
-    });
-
-
-    document.body.addEventListener('mousedown', (event) => {
-      const x = event.offsetX;
-      const y = event.offsetY;
-      if (event.button === 2) {
-        event.preventDefault();
-        ws.send(JSON.stringify({ type: 'move', id: playerId, x, y }));
-        if (players[playerId]) {
-          players[playerId].targetX = x;
-          players[playerId].targetY = y;
-        }
-      } else if (event.button === 0) {
-        if (players[playerId]) {
-          const player = players[playerId];
-          ws.send(JSON.stringify({ type: 'shoot', id: playerId, targetX: x, targetY: y }));
-        }
-      }
-    });
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log(data);
-
-      if (data.type === 'init') {
-        playerId = data.playerId;
-        players = data.players;
-        playerSpeed = data.playerSpeed;
-        bulletSpeed = data.bulletSpeed;
-      } else if (data.type === 'update') {
-        if (players[data.id]) {
-          players[data.id].targetX = data.targetX;
-          players[data.id].targetY = data.targetY;
-        }
-        playerSpeed = data.playerSpeed;
-      } else if (data.type === 'newPlayer') {
-        players[data.player.id] = data.player;
-      } else if (data.type === 'removePlayer') {
-        delete players[data.id];
-      } else if (data.type === 'shoot') {
-        const player = players[data.id];
-        if (player) {
-          shootBullet(player.x, player.y, data.targetX, data.targetY, player.color);
-        }
-        bulletSpeed = data.bulletSpeed;
-      } else if (data.type === 'playerDead') {
-        const player = players[data.id];
-        if (player) {
-          player.isDead = true;
-          if (data.id === playerId) {
-            document.getElementById('defeatOverlay').style.display = 'flex';
-          }
-        }
-      }
-    };
-
-    document.body.addEventListener('contextmenu', event => event.preventDefault());
-    document.body.addEventListener('contextmenu', event => event.preventDefault());
-    requestAnimationFrame(animate);
-
-  </script>
-</body>
-</html> -->
