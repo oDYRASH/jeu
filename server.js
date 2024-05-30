@@ -96,12 +96,13 @@ wss.on('connection', (ws, request, room, name) => {
 
   }
 
-  ws.send(JSON.stringify({ type: 'init', playerId: player.getId(), players: currentRoom.players }));
-  broadcast({ type: 'scoreUpdate', scores: getScores(room) }, null, room);
-
+  ws.send(JSON.stringify({ type: 'init', playerId: player.getId(), players: currentRoom.players, scores: getScores(room)}));
   ws.room = room;
 
   broadcast({ type: 'newPlayer', player }, ws, room);
+  // score update
+  broadcast({ type: 'scoreUpdate', scores: getScores(room) }, null, room);
+
 
   ws.on('message', (message) => {
     const data = JSON.parse(message);
@@ -164,14 +165,16 @@ const checkCollisions = (room) => {
         if (distance < player.getRadius() + bullet.radius) {
 
           roomPlayers[bullet.ownerId].incrementScore();
+          try {
+            roomPlayers[1].respawn(100, 100);
+            broadcast({ type: 'respawn', id: 1, x: 100, y: 100 }, null, room);
 
-          roomPlayers[1].respawn(100, 100);
-          broadcast({ type: 'respawn', id: 1, x: 100, y: 100 }, null, room);
-
-          roomPlayers[2].respawn(1500, 700);
-          broadcast({ type: 'respawn', id: 2, x: 1500, y: 700 }, null, room);
-          broadcast({ type: 'scoreUpdate', scores: getScores(room) }, null, room);
-
+            roomPlayers[2].respawn(1500, 700);
+            broadcast({ type: 'respawn', id: 2, x: 1500, y: 700 }, null, room);
+            broadcast({ type: 'scoreUpdate', scores: getScores(room) }, null, room);
+          } catch (e) {
+            console.log("ERROR ON RESPAWN 💃",e); 
+          }
           roomInstance.bullets = [];
           hit = true;
           return false;

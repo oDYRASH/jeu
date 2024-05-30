@@ -5,11 +5,21 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="./game_styles.css">
+
   <title>Canvas Game</title>
 </head>
 
 <body>
-  <div class="custom-cursor" id="customCursor"></div>
+  <!-- <div class="custom-cursor" id="customCursor"></div>
+  <script>
+    // Afficher le curseur personnalisé
+    const customCursor = document.getElementById('customCursor');
+    document.addEventListener('mousemove', (e) => {
+      customCursor.style.left = `${e.clientX - 3}px`;
+      customCursor.style.top = `${e.clientY - 3}px`;
+    });
+  </script> -->
+
 
   <script>
     // Activer le plein écran
@@ -41,39 +51,18 @@
     } 
   </script>
 
-  <script>
-    // Afficher le curseur personnalisé
-    const customCursor = document.getElementById('customCursor');
-    document.addEventListener('mousemove', (e) => {
-      customCursor.style.left = `${e.clientX - 3}px`;
-      customCursor.style.top = `${e.clientY - 3}px`;
-    });
-  </script>
+
 
   <canvas id="gameCanvas" width="1600" height="800"></canvas>
   <div id="cooldown-div"></div>
-  <div id="defeatOverlay" style="display: none;">
-    DEFEAT
-    <button id="playAgainButton">Play Again</button>
-  </div>
-  <div id="scoreBoard" style="position: absolute; top: 10px; left: 10px; background: rgba(255, 255, 255, 0.7); padding: 10px; border-radius: 5px; display: flex;
-  font-family: sans-serif;"></div>
+
+  <div id="scoreBoard"></div>
   <div id="reloadIndicator"
-    style="position: absolute; bottom: 50px; right: 10px; background: rgba(255, 0, 0, 0.7); padding: 10px; border-radius: 5px; display: none;">
+    style="position: absolute; top: 20px; left: 20px; background: rgb(206, 57, 57); padding: 10px; display: none;">
     Reloading...
   </div>
 
   <script>
-
-    // stop click propagation to body when defeatOverlay is clicked
-    document.getElementById('defeatOverlay').addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
-
-    document.getElementById('playAgainButton').addEventListener('click', () => {
-      location.reload();
-    });
 
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
@@ -106,15 +95,16 @@
     const drawCircle = (circle) => {
       ctx.beginPath();
       ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
-      ctx.fillStyle = circle.id === playerId ? 'blue' : 'red';
+      ctx.fillStyle = circle.id === playerId ? '#5c7dff' : '#f93943';
       ctx.fill();
       ctx.closePath();
     };
 
+
     const drawBullet = (bullet) => {
       ctx.beginPath();
       ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
-      ctx.fillStyle = bullet.ownerId === playerId ? 'blue' : 'red';
+      ctx.fillStyle = bullet.ownerId === playerId ? '#5c7dff' : '#f93943';
       ctx.fill();
       ctx.closePath();
     };
@@ -178,7 +168,7 @@
     };
 
     document.addEventListener('keydown', (event) => {
-      if (event.key === 's' || event.key === 'S' && !gameIsStopped) {
+      if (event.key === 's' || event.key === 'S') {
         ws.send(JSON.stringify({ type: 'move', id: playerId, x: null, y: null }));
         if (players[playerId]) {
           players[playerId].targetX = null;
@@ -187,7 +177,8 @@
       }
     });
 
-    document.body.addEventListener('mousedown', (event) => {
+
+    canvas.addEventListener('mousedown', (event) => {
       const x = event.offsetX;
       const y = event.offsetY;
       if (event.button === 2 && !gameIsStopped) {
@@ -209,6 +200,9 @@
       if (data.type === 'init') {
         playerId = data.playerId;
         players = data.players;
+
+        updateScoreBoard(data.scores);
+
       } else if (data.type === 'update') {
         if (players[data.id]) {
           players[data.id].targetX = data.targetX;
@@ -217,6 +211,7 @@
         //console.log("🔄 Mise à jour de la position du joueur:", data);
       } else if (data.type === 'newPlayer') {
         players[data.player.id] = data.player;
+
         //console.log("🆕 Nouveau joueur connecté:", data.player);
       } else if (data.type === 'removePlayer') {
         delete players[data.id];
@@ -236,7 +231,7 @@
 
       } else if (data.type === 'respawn') {
 
-        console.log("GAME STOP")
+        shootCount = 0;
         gameIsStopped = true;
 
         const player = players[data.id];
@@ -259,6 +254,20 @@
         alert('The game is ready! Both players have joined.');
       }
     };
+
+
+    ws.onclose = (event) => {
+      // redirect to / page, room is closed
+      alert('Vous avez été déconnecté de la salle.');
+      window.location.href = '/';
+    };
+
+    ws.onerror = (event) => {
+      // alert('WebSocket error:', event);
+      // Handle the error or attempt to reconnect
+    };
+
+    
 
     const startGame = () => {
 
@@ -312,6 +321,7 @@
       scoreBoard.innerHTML = '';
       scores.forEach(score => {
         const scoreItem = document.createElement('div');
+        scoreItem.classList.add('score-item');
         scoreItem.textContent = `${score.name}: ${score.score}`;
         scoreItem.style.fontWeight = 'bold';
         scoreItem.style.margin = '5px';
