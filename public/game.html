@@ -100,7 +100,6 @@
       ctx.closePath();
     };
 
-
     const drawBullet = (bullet) => {
       ctx.beginPath();
       ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
@@ -162,8 +161,10 @@
     const animate = () => {
       updatePlayerPositions();
       updateBullets();
-      drawPlayers();
-      drawBullets();
+      if(!gameIsStopped){
+        drawPlayers();
+        drawBullets();
+      }
       requestAnimationFrame(animate);
     };
 
